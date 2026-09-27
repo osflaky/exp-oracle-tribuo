@@ -1,0 +1,54 @@
+# This workflow will build a Java project with Maven
+# For more information see: https://help.github.com/actions/language-and-framework-guides/building-and-testing-java-with-maven
+
+name: Tribuo CI (Ubuntu x86_64, Java SE 21, 25)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # test against supported LTS versions and latest
+        include:
+        - java: 21
+          os: macos-latest
+          arch: arm64
+          runner: macos-latest
+          expander_leg: macos-latest--arm64
+    name: Ubuntu Java SE ${{ matrix.java }} [${{ matrix.expander_leg }}]
+    steps:
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd   # v6.0.2
+      with:
+        persist-credentials: false
+      # The XGBoost4J macOS native library links against @rpath/libomp.dylib, which
+      # is not preinstalled on the GitHub macOS runners (see maven-macos-x64.yml).
+    - name: Install libomp for XGBoost
+      if: ${{ runner.os == 'macOS' }}
+      run: brew install libomp
+    - name: Setup Oracle Java SE
+      if: ${{ !(runner.os == 'Windows' && runner.arch == 'ARM64') }}
+      uses: oracle-actions/setup-java@fff43251af9936a0e6a4d5d0946e14f1680e9b6b   # v1.5.0
+      with:
+        website: oracle.com
+        release: ${{ matrix.java }}
+      # Oracle does not publish Java SE for Windows on ARM64, and the native backends
+      # (ONNX Runtime, XGBoost, TensorFlow) ship no win-arm64 binaries. Use the x64
+      # Oracle Java SE build, which runs under Windows 11 x64 emulation and loads the
+      # win-x64 natives, so the full test suite still runs on this runner.
+    - name: Setup Oracle Java SE (Windows ARM64, x64 emulation)
+      if: ${{ runner.os == 'Windows' && runner.arch == 'ARM64' }}
+      uses: actions/setup-java@v5
+      with:
+        distribution: oracle
+        java-version: ${{ matrix.java }}
+        architecture: x64
+    - name: Build with Maven
+      run: mvn -B package --file pom.xml
+    timeout-minutes: 150
